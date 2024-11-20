@@ -1,0 +1,266 @@
+---
+title: "RDM Lesson"
+output: html_notebook
+---
+
+# [The racing diffusion model of speeded decision making](https://pubmed.ncbi.nlm.nih.gov/32424622/)
+
+Tillman, G., Van Zandt, T. & Logan, G.D. Sequential sampling models without random between-trial variability: the racing diffusion model of speeded decision making. Psychon Bull Rev 27, 911–936 (2020). <https://doi.org/10.3758/s13423-020-01719-6>
+
+## Simulate a RDM 
+
+#### Config parameters
+
+```{r}
+# Initialize variables
+a <- 3         # Decision threshold
+v1 <- 4        # Drift rate of Accumulator 1
+v0 <- 2.84     # Drift rate of Accumulator 0
+dt <- 1 / 60   # Sampling rate
+```
+
+#### Animation plot of the evidence accumulation process
+
+```{r}
+# Required Libraries
+library(ggplot2)
+library(gganimate)
+
+ntrials <- 1    # Number of trials to include in the GIF
+
+# Initialize Data Frame to Store Simulation Results
+simulation_data <- data.frame(
+  time = numeric(),
+  value = numeric(),
+  accumulator = character(),
+  trial = integer()
+)
+
+# Simulate Trials
+set.seed(42)  # For reproducibility
+for (trial in 1:ntrials) {
+  y1 <- 0  # Starting point for Accumulator 1
+  y0 <- 0  # Starting point for Accumulator 2
+  x <- 0   # Starting time
+  goon <- TRUE
+  
+  while (goon) {
+    # Update Accumulator Values
+    y1 <- c(y1, tail(y1, 1) + rnorm(1, mean = v1 * dt, sd = sqrt(dt)))
+    y0 <- c(y0, tail(y0, 1) + rnorm(1, mean = v0 * dt, sd = sqrt(dt)))
+    x <- c(x, tail(x, 1) + dt)
+    
+    # Add to Simulation Data
+    simulation_data <- rbind(
+      simulation_data,
+      data.frame(
+        time = tail(x, 1),
+        value = tail(y1, 1),
+        accumulator = "Accumulator 1",
+        trial = trial
+      ),
+      data.frame(
+        time = tail(x, 1),
+        value = tail(y0, 1),
+        accumulator = "Accumulator 2",
+        trial = trial
+      )
+    )
+    
+    # Check if Boundary is Crossed
+    if (tail(y1, 1) > a || tail(y0, 1) > a) {
+      goon <- FALSE
+    }
+  }
+}
+
+# Create the Plot
+p <- ggplot(simulation_data, aes(x = time, y = value, color = accumulator, group = accumulator)) +
+  geom_line(size = 1) +
+  geom_hline(yintercept = a, linetype = "dashed", color = "gray") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black") +
+  facet_wrap(~trial, ncol = 1, scales = "free_x") +
+  theme_minimal() +
+  labs(
+    title = "Diffusion Model Simulation",
+    x = "Time",
+    y = "Accumulator Value",
+    color = "Accumulator"
+  ) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(size = 16, face = "bold")
+  ) +
+  transition_reveal(time)
+
+p
+
+```
+
+#### Data simulation
+
+```{r}
+# Parameters
+ntrials <- 1000   # Number of simulated trials
+a <- 3            # Decision threshold
+v1 <- 4           # Drift rate of Accumulator 1
+v0 <- 2.84        # Drift rate of Accumulator 2
+dt <- 1 / 60      # Sampling rate
+
+# Initialize RT (reaction time) and Response (correct or incorrect) vectors
+rt <- rep(NA, ntrials)   # Reaction times
+resp <- rep(FALSE, ntrials)  # Response: TRUE for Accumulator 1, FALSE for Accumulator 2
+
+# Simulate trials
+set.seed(42)  # Set seed for reproducibility
+
+for (idx in 1:ntrials) {
+  # Initialize variables for each trial
+  x <- 0      # Time starts at 0
+  y1 <- 0     # Starting point of Accumulator 1
+  y0 <- 0     # Starting point of Accumulator 2
+  goon <- TRUE
+  
+  while (goon) {
+    # Simulate the diffusion process
+    y1 <- c(y1, tail(y1, 1) + rnorm(1, mean = v1 * dt, sd = sqrt(dt)))
+    y0 <- c(y0, tail(y0, 1) + rnorm(1, mean = v0 * dt, sd = sqrt(dt)))
+    x <- c(x, tail(x, 1) + dt)
+    
+    # Check if the boundary is crossed
+    if (tail(y1, 1) > a || tail(y0, 1) > a) {
+      rt[idx] <- tail(x, 1)             # Record reaction time
+      resp[idx] <- tail(y1, 1) > a     # TRUE if Accumulator 1 crosses the threshold
+      goon <- FALSE                    # End the trial
+    }
+  }
+}
+```
+
+#### RDM function
+
+```{r}
+utl_inverse_gaussian_defective <- function(x, drift_pdf, drift_cdf, threshold1, threshold2) {
+  # PDF computation
+  pdf <- (threshold1) / sqrt(2 * pi * (x^3)) * 
+    exp(-0.5 * ((drift_pdf * x - threshold1)^2) / x)
+  
+  # CDF computation
+  cdf <- pnorm(((drift_cdf * x) - threshold2) / sqrt(x)) +
+    exp(2 * drift_cdf * threshold2) * 
+    pnorm((-(drift_cdf * x) - threshold2) / sqrt(x))
+  
+  # Defective probabilities
+  probs <- pdf * (1 - cdf)
+  
+  # Return results as a list
+  list(g = probs, pdf = pdf, cdf = cdf)
+}
+
+```
+
+#### Display RT distributions for the two accumulators
+
+```{r}
+# Reaction Time Histograms and Distributions
+x_seq <- seq(dt, 3, by = dt)  # Time steps for the distributions
+
+# Accumulator 1
+rt1 <- ifelse(resp, rt, -rt)  # Correct responses positive, incorrect negative
+dist_acc1 <- utl_inverse_gaussian_defective(x_seq, v1, v0, a, a)
+
+# Plot Accumulator 1
+ggplot() +
+  geom_histogram(aes(x = rt1, y = ..density..), bins = ntrials / 10, fill = "gray", alpha = 0.5) +
+  geom_line(aes(x = x_seq, y = dist_acc1$pdf), color = "blue", size = 1, linetype = "solid") +
+  geom_line(aes(x = x_seq, y = 1 - dist_acc1$cdf), color = "red", size = 1, linetype = "solid") +
+  geom_line(aes(x = x_seq, y = dist_acc1$g), color = "black", size = 2, linetype = "solid") +
+  labs(
+    title = "Accumulator 1 - Reaction Time and Distributions",
+    x = "Reaction Time (s)",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# Accumulator 2
+rt2 <- ifelse(!resp, rt, -rt)  # Correct responses negative, incorrect positive
+dist_acc2 <- utl_inverse_gaussian_defective(x_seq, v0, v1, a, a)
+
+# Plot Accumulator 2
+ggplot() +
+  geom_histogram(aes(x = rt2, y = ..density..), bins = ntrials / 10, fill = "gray", alpha = 0.5) +
+  geom_line(aes(x = x_seq, y = dist_acc2$pdf), color = "blue", size = 1, linetype = "solid") +
+  geom_line(aes(x = x_seq, y = 1 - dist_acc2$cdf), color = "red", size = 1, linetype = "solid") +
+  geom_line(aes(x = x_seq, y = dist_acc2$g), color = "black", size = 2, linetype = "solid") +
+  labs(
+    title = "Accumulator 2 - Reaction Time and Distributions",
+    x = "Reaction Time (s)",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# Displaying mean reaction times and accuracies
+cat("Results:\n\n")
+
+cat("Correct responses:\n")
+cat("Mean RT:", mean(rt[resp], na.rm = TRUE), "\n")
+cat("Proportion of correct responses:", mean(resp, na.rm = TRUE), "\n\n")
+
+cat("Incorrect responses:\n")
+cat("Mean RT:", mean(rt[!resp], na.rm = TRUE), "\n")
+cat("Proportion of errors:", mean(!resp, na.rm = TRUE), "\n")
+```
+
+## RDM parameter estimation
+
+```{r}
+# Define the initial parameters
+x0 <- c(0, 0, 0)  # Initial points
+
+# Define the function to be minimized (negative log-likelihood or fit function)
+fit_RDM <- function(x, rt, resp) {
+  # Transform parameters to their native space
+  a <- exp(x[1])
+  v1 <- exp(x[2])
+  v0 <- exp(x[3])
+  
+  # Compute likelihood of responses of Accumulator 1
+  P1 <- log(utl_inverse_gaussian_defective(rt[resp == TRUE], v1, v0, a, a)$g)
+  
+  # Compute likelihood of responses of Accumulator 2
+  P2 <- log(utl_inverse_gaussian_defective(rt[resp == FALSE], v0, v1, a, a)$g)
+  
+  # Sum response likelihood
+  loglik <- sum(c(P1, P2))  # Return the total log-likelihood
+  
+  return(-loglik)
+}
+
+# Optimization function for the likelihood function
+
+
+# Optimization options
+options <- list(method = "BFGS")  # Equivalent to 'quasi-newton' in MATLAB
+
+# Run the optimization
+result <- optim(
+  par = x0, 
+  fn = fit_RDM, 
+  rt = rt, 
+  resp = resp, 
+  method = "BFGS",  # Similar to 'quasi-newton' in MATLAB
+)
+
+# Extract the results and transform to their native space
+p_ddm <- list(
+  a = exp(result$par[1]),
+  v1 = exp(result$par[2]),
+  v0 = exp(result$par[3])
+)
+
+# Display results
+cat("Results:\n\n")
+cat("Parameter estimates:\n")
+print(p_ddm)
+
+```

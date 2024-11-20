@@ -1,0 +1,149 @@
+---
+title: "DDM vs SDT"
+output: html_notebook
+---
+
+# Relation between DDM starting point (w) and SDT parameters
+
+```{r}
+# Initialize variables
+a <- 2  # Boundary separation
+v <- 1.1  # Mean drift rate
+w <- seq(0.1, 0.9, by = 0.05)  # Relative starting point
+dt <- 1 / 60  # Sampling rate
+
+ntrials <- 1000  # Number of simulated trials
+
+# Initialize RT and Response vectors
+rt <- rep(NA, ntrials)
+hits <- rep(NA, length(w))
+fa <- rep(NA, length(w))
+
+for (wx in seq_along(w)) {
+  resp <- rep(FALSE, ntrials)
+  
+  # Simulating hits
+  for (idx in seq_len(ntrials)) {
+    y <- a * w[wx]
+    x <- 0
+    goon <- TRUE
+    
+    while (goon) {
+      y <- c(y, tail(y, 1) + rnorm(1, mean = v * dt, sd = sqrt(dt)))
+      x <- c(x, tail(x, 1) + dt)
+      if (tail(y, 1) < 0 || tail(y, 1) > a) {
+        rt[idx] <- tail(x, 1)
+        resp[idx] <- tail(y, 1) > a
+        goon <- FALSE
+      }
+    }
+  }
+  hits[wx] <- (sum(resp)+.5) / (ntrials+1)
+  
+  resp <- rep(FALSE, ntrials)
+  
+  # Simulating false alarms
+  for (idx in seq_len(ntrials)) {
+    y <- a * w[wx]
+    x <- 0
+    goon <- TRUE
+    
+    while (goon) {
+      y <- c(y, tail(y, 1) + rnorm(1, mean = -v * dt, sd = sqrt(dt)))
+      x <- c(x, tail(x, 1) + dt)
+      if (tail(y, 1) < 0 || tail(y, 1) > a) {
+        rt[idx] <- tail(x, 1)
+        resp[idx] <- tail(y, 1) > a
+        goon <- FALSE
+      }
+    }
+  }
+  fa[wx] <- (sum(resp)+.5) / (ntrials+1)
+}
+
+# Compute z-scores and metrics
+zHits <- qnorm(hits)
+zFA <- qnorm(fa)
+dPrime <- zHits - zFA
+c <- - (zHits + zFA) / 2
+
+# Plot dPrime vs w
+plot(w, dPrime, main = "dPrime vs w", xlab = "w", ylab = "dPrime", pch = 16)
+
+# Plot c vs w
+plot(w, c, main = "c vs w", xlab = "w", ylab = "c", pch = 16)
+
+```
+
+# Relation between DDM drift rate and SDT parameters
+
+```{r}
+# Initialize variables
+a <- 2  # Boundary separation
+v_all <- seq(1, 2, by = 0.05)  # Mean drift rate
+w <- 0.5  # Relative starting point
+dt <- 1 / 60  # Sampling rate
+
+ntrials <- 1000  # Number of simulated trials
+
+# Initialize RT and Response vectors
+rt <- rep(NA, ntrials)
+hits <- rep(NA, length(v_all))
+fa <- rep(NA, length(v_all))
+
+for (vx in seq_along(v_all)) {
+  v <- v_all[vx]
+  resp <- rep(FALSE, ntrials)
+  
+  # Simulating hits
+  for (idx in seq_len(ntrials)) {
+    y <- a * w
+    x <- 0
+    goon <- TRUE
+    
+    while (goon) {
+      y <- c(y, tail(y, 1) + rnorm(1, mean = v * dt, sd = sqrt(dt)))
+      x <- c(x, tail(x, 1) + dt)
+      if (tail(y, 1) < 0 || tail(y, 1) > a) {
+        rt[idx] <- tail(x, 1)
+        resp[idx] <- tail(y, 1) > a
+        goon <- FALSE
+      }
+    }
+  }
+  hits[vx] <- (sum(resp)+.5) / (ntrials+1)
+  
+  resp <- rep(FALSE, ntrials)
+  
+  # Simulating false alarms
+  for (idx in seq_len(ntrials)) {
+    y <- a * w
+    x <- 0
+    goon <- TRUE
+    
+    while (goon) {
+      y <- c(y, tail(y, 1) + rnorm(1, mean = -v * dt, sd = sqrt(dt)))
+      x <- c(x, tail(x, 1) + dt)
+      if (tail(y, 1) < 0 || tail(y, 1) > a) {
+        rt[idx] <- tail(x, 1)
+        resp[idx] <- tail(y, 1) > a
+        goon <- FALSE
+      }
+    }
+  }
+  fa[vx] <- (sum(resp)+.5) / (ntrials+1)
+}
+
+# Compute z-scores and metrics
+zHits <- qnorm(hits)
+zFA <- qnorm(fa)
+dPrime <- zHits - zFA
+c <- - (zHits + zFA) / 2
+
+# Plot dPrime vs v_all
+plot(v_all, dPrime, main = "dPrime vs v_all", xlab = "v_all", ylab = "dPrime", pch = 16)
+
+# Plot c vs v_all
+plot(v_all, c, main = "c vs v_all", xlab = "v_all", ylab = "c", pch = 16)
+
+```

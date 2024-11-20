@@ -1,0 +1,238 @@
+---
+title: "DDM_lesson"
+output: html_notebook
+---
+
+Suggested readings:
+
+-   <https://doi.org/10.1146/ANNUREV-PSYCH-122414-033645> <https://doi.org/10.1146/ANNUREV-PSYCH-122414-033645>
+
+-   <https://doi.org/10.3389/fpsyg.2022.1039172>
+
+-   <https://pmc.ncbi.nlm.nih.gov/articles/PMC2474742/#S23>
+
+-   <https://doi.org/10.1037/0033-295X.85.2.59> <https://doi.org/10.1016/j.jmp.2009.02.003>
+
+## Simulate a DDM
+
+#### Config parameters
+
+```{r}
+# Define the parameters
+a <- 2           # Boundary separation
+v <- 1.1         # Mean drift rate
+w <- 0.5         # Relative starting point
+noise_v <- 1     # Within-trial variability in the drift rate
+sv <- 0          # Drift rate variability (set to 0)
+noise_w <- 0     # Between-trial variability in the starting point
+dt <- 1/60       # Sampling rate
+```
+
+#### Animation plot of the evidence accumulation process
+
+10 trials
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(gganimate)
+library(tidyr)
+
+
+# Function to simulate the diffusion process for a single trial
+simulate_trial <- function(a, v, w, noise_v, dt, ntrials) {
+  # Initialize vectors for storing the trial data
+  trial_data <- data.frame(trial = integer(), time = numeric(), value = numeric(), hit = logical())
+  
+  for (trial in 1:ntrials) {
+    time <- 0
+    value <- a * w # initial value
+    hit <- FALSE
+    
+    # Simulate the accumulation process over time
+    while (!hit && time <= 3) {  # Limit the trial time to 3 seconds
+      time <- time + dt
+      value <- value + rnorm(1, mean = v * dt, sd = noise_v * sqrt(dt))  # diffusion update
+      
+      # Check if the trial hits the boundary
+      if (value <= 0 || value >= a) {
+        hit <- TRUE
+      }
+      
+      # Store trial data
+      trial_data <- rbind(trial_data, data.frame(trial = trial, time = time, value = value, hit = hit))
+    }
+  }
+  
+  return(trial_data)
+}
+
+# Set parameters for the simulation
+ntrials <- 10 # Number of trials to simulate
+
+# Simulate the trials
+trial_data <- simulate_trial(a, v, w, noise_v, dt, ntrials)
+
+# Plot the diffusion process using ggplot2
+p <- ggplot(transform(trial_data, ind = 1:nrow(trial_data)), aes(x = time, y = value, group = trial, color = hit)) +
+  geom_line() +
+  scale_color_manual(values = c("red", "blue")) +  # Red for misses, Blue for hits
+  theme_minimal() +
+  labs(title = "Diffusion Process Simulation", x = "Time (s)", y = "Accumulation Value") +
+  transition_reveal(time) +  # Animate the process over time
+  theme(legend.position = "none")  # Remove legend
+
+# show the accumulation process for ntrials
+p
+
+```
+
+## Plots of the response time (RT) distributions for the two accumulators
+
+#### Data simulation
+
+```{r}
+# Parameters
+ntrials <- 1000  # Number of simulated trials
+
+# Initialize RT (reaction time) and Response (correct or incorrect) vectors
+rt <- rep(NA, ntrials)
+resp <- rep(FALSE, ntrials)
+
+# Simulate trials
+set.seed(42)  # Set seed for reproducibility
+
+for (idx in 1:ntrials) {
+  # Random starting point for each trial
+  w_tmp <- runif(1, w - min(c(w, 1 - w)) * noise_w, w + min(c(w, 1 - w)) * noise_w)
+  y <- a * w_tmp  # Initial accumulator value based on w_tmp
+  x <- 0  # Time starts at 0
+  goon <- TRUE  # Logical flag to keep the trial going
+
+  while (goon) {
+    # Simulate the diffusion process
+    y <- c(y, y[length(y)] + rnorm(1, mean = v * dt, sd = sqrt(dt)))
+    x <- c(x, x[length(x)] + dt)
+
+    # Check if the boundary is crossed (either hit or false alarm)
+    if (y[length(y)] < 0 || y[length(y)] > a) {
+      rt[idx] <- x[length(x)]  # Record the reaction time (time at boundary crossing)
+      resp[idx] <- y[length(y)] > a  # Record the response (TRUE if correct response)
+      goon <- FALSE  # End the trial
+    }
+  }
+}
+
+```
+
+#### Display the distributions
+
+```{r}
+# Libraries
+# Libraries
+library(ggplot2)
+library(WienR)
+library(patchwork) # For arranging plots
+
+# Assuming `rt` and `resp` from the previous simulation
+
+# --- Upper Boundary ---
+rt1 <- rt
+rt1[!resp] <- 0  # Assign 0 RT for incorrect responses
+
+# Compute the First Passage Time (FPT) distribution for the upper boundary
+x <- seq(dt, 3, by = dt)
+P_upper <- WienerPDF(t = x, response = "upper", a = a, v = v, w = w)
+
+# Create plot for upper boundary
+plot_upper <- ggplot() +
+  geom_histogram(data = data.frame(rt1), aes(x = rt1, y = ..density..), 
+                 bins = ntrials / 10, fill = "blue", alpha = 0.5) +
+  geom_line(data = data.frame(x = x, density = P_upper$value), 
+            aes(x = x, y = density), color = "black", linewidth = 1.5) +
+  xlim(0, 3) + ylim(0, 1.5) +
+  ggtitle("Upper Boundary RT distribution") +
+  theme_minimal()
+
+# --- Lower Boundary ---
+rt2 <- rt
+rt2[resp] <- 0  # Assign 0 RT for correct responses
+
+# Compute the First Passage Time (FPT) distribution for the lower boundary
+P_lower <- WienerPDF(t = x, response = "lower", a = a, v = v, w = w)
+
+# Create plot for lower boundary
+plot_lower <- ggplot() +
+  geom_histogram(data = data.frame(rt2), aes(x = rt2, y = ..density..), 
+                 bins = ntrials / 10, fill = "blue", alpha = 0.5) +
+  geom_line(data = data.frame(x = x, density = P_lower$value), 
+            aes(x = x, y = density), color = "black", linewidth = 1.5) +
+  xlim(0, 3) + ylim(0, 1.5) +
+  ggtitle("Lower Boundary RT distribution") +
+  theme_minimal()
+
+# Display the combined plot
+print(plot_upper + plot_lower + 
+  plot_layout(ncol = 2, widths = c(1, 1)))
+
+
+# Display mean RT and accuracy
+cat("Results:\n\n")
+cat("Upper boundary:\n")
+cat(paste("Mean RT:", mean(rt[resp]), "\n"))
+cat(paste("Proportion of 'upper' responses:", mean(resp), "\n\n"))
+
+cat("Lower boundary:\n")
+cat(paste("Mean RT:", mean(rt[!resp]), "\n"))
+cat(paste("Proportion of 'lower' responses:", mean(!resp), "\n"))
+
+```
+
+# DDM parameter estimation
+
+```{r}
+library(WienR)
+# Define initial points
+x0 <- c(0, 0, 0)
+
+# Define the function to be minimized
+fit_DDM <- function(params, rt, resp) {
+  # Transform parameters to their native space
+  a <- exp(params[1])
+  v <- exp(params[2])
+  w <- 1 / (1 + exp(-params[3]))
+  
+  # Compute likelihood of "upper" responses
+  P1 <- WienerPDF(t = rt[resp], response = "upper", a = a, v = v, w = w)$logvalue
+  
+  # Compute likelihood of "lower" responses
+  P2 <- WienerPDF(t = rt[!resp], response = "lower", a = a, v = v, w = w)$logvalue
+  
+  # Sum response likelihoods
+  loglik <- sum(c(P1, P2))  # Remove NA values to prevent errors
+  
+  return(-loglik)  # Negative log-likelihood for minimization
+}
+
+# Perform optimization using `optim`
+result <- optim(
+  par = x0, 
+  fn = fit_DDM, 
+  rt = rt, 
+  resp = resp, 
+  method = "BFGS",  # Similar to 'quasi-newton' in MATLAB
+)
+
+# Extract results and transform parameters back to their native space
+p_ddm <- list(
+  a = exp(result$par[1]),
+  v = exp(result$par[2]),
+  w = 1 / (1 + exp(-result$par[3]))
+)
+
+# Display results
+cat("Results:\n\n")
+cat("Parameter estimates:\n")
+print(p_ddm)
+
+```

@@ -1,0 +1,335 @@
+---
+title: "SDT Lesson"
+output: html_notebook
+---
+
+Suggested reading: <https://link.springer.com/content/pdf/10.3758/BF03207704.pdf> 
+
+## Simulate a SDT experiment
+
+#### Config parameters
+
+Change parameters to see what happens
+
+```{r}
+noise_mu = 0  # mean of signal absent distribution
+signal_mu = 2 # mean of signal present distribution
+beta = .5 # Criterion
+ntrials = 1000 # number of trial for each condition
+
+# assumption of IID (independent and identically distributed) Gaussian noise
+sigma = 1 # standard deviation of both distributions
+
+```
+
+#### Representation of the signal and noise distributions
+
+Simulate and visualize representations and responses according to config parameters
+
+```{r}
+# Trial list
+u <- sample(c(rep(0, ntrials), rep(1, ntrials))) # Randomized trial list
+
+# Simulate internal signal
+signal <- rep(NA, length(u))
+signal[u == 1] <- rnorm(ntrials, mean = signal_mu, sd = sigma) # Signal-present trials
+signal[u == 0] <- rnorm(ntrials, mean = noise_mu, sd = sigma) # Signal-absent trials
+
+# Simulate responses
+response <- signal > beta
+
+# Plot signal distributions
+library(ggplot2)
+library(dplyr)
+
+x <- seq(-5, 5, length.out = 1000)
+pdf_signal <- dnorm(x, mean = signal_mu, sd = sigma)
+pdf_noise <- dnorm(x, mean = noise_mu, sd = sigma)
+
+# Plot 1: Signal distributions
+plot1 <- ggplot() +
+  geom_histogram(aes(x = signal[u == 1], y = after_stat(density)), bins = 30, fill = "blue", alpha = 0.5) +
+  geom_histogram(aes(x = signal[u == 0], y = after_stat(density)), bins = 30, fill = "red", alpha = 0.5) +
+  geom_line(aes(x = x, y = pdf_signal), color = "blue", size = 1.2) +
+  geom_line(aes(x = x, y = pdf_noise), color = "red", size = 1.2) +
+  theme_minimal() +
+  ggtitle("Signal Distributions") +
+  labs(x = "Internal Signal", y = "Density")
+
+# Plot 2: Proportion of Hits and Misses
+plot2 <- ggplot() +
+  geom_line(aes(x = x, y = pdf_signal, color = "Signal (u = 1)"), size = 1.2) +
+  geom_vline(xintercept = beta, linetype = "dashed", size = 1, color = "black", show.legend = TRUE) +
+  geom_area(aes(x = x[x > beta], y = pdf_signal[x > beta], fill = "Hit"), alpha = 0.3) +
+  geom_area(aes(x = x[x <= beta], y = pdf_signal[x <= beta], fill = "Miss"), alpha = 0.3) +
+  scale_color_manual(name = "Distributions", values = c("Signal (u = 1)" = "blue")) +
+  scale_fill_manual(name = "Outcomes", values = c("Hit" = "green", "Miss" = "red")) +
+  theme_minimal() +
+  labs(title = "Proportion of Hits and Misses (u = 1)", x = "Internal Signal", y = "Density") +
+  theme(legend.position = "bottom")
+
+
+# Plot 3: Proportion of False Alarms and Correct Rejections
+plot3 <- ggplot() +
+  geom_line(aes(x = x, y = pdf_noise, color = "Noise (u = 0)"), size = 1.2) +
+  geom_vline(xintercept = beta, linetype = "dashed", size = 1, color = "black", show.legend = TRUE) +
+  geom_area(aes(x = x[x > beta], y = pdf_noise[x > beta], fill = "False Alarm"), alpha = 0.3) +
+  geom_area(aes(x = x[x <= beta], y = pdf_noise[x <= beta], fill = "Correct Rejection"), alpha = 0.3) +
+  scale_color_manual(name = "Distributions", values = c("Noise (u = 0)" = "red")) +
+  scale_fill_manual(name = "Outcomes", values = c("False Alarm" = "red", "Correct Rejection" = "green")) +
+  theme_minimal() +
+  labs(title = "Proportion of False Alarms and Correct Rejections (u = 0)", x = "Internal Signal", y = "Density") +
+  theme(legend.position = "bottom")
+
+# Display the plots
+library(gridExtra)
+grid.arrange(plot1, plot2, plot3, ncol = 3)
+
+```
+
+## Explanation of d' and c
+
+**What is d' (Sensitivity)?**
+
+-   $d'$ (d-prime) measures the **sensitivity** or ability to distinguish between signal-present and signal-absent trials.
+-   A higher $d'$ value indicates better sensitivity, meaning the observer can more accurately differentiate signal from noise.
+-   $d'$ is calculated as the difference between the z-scores of hits and false alarms:
+
+$$
+d' = z_{\text{Hits}} - z_{\text{False Alarms}}
+$$
+
+-   $d'$ is independent of the observer's decision bias ($c$) and depends only on the separation between the means of the signal and noise distributions, relative to their standard deviation.
+
+------------------------------------------------------------------------
+
+**What is c (Bias)?**
+
+-   $c$ (criterion or bias) represents the observer's **decision threshold** for classifying a trial as signal-present or signal-absent.
+-   The value of $c$ reflects the observer's bias:
+    -   **If** $c < 0$: The observer has a *liberal bias*, meaning they are more likely to say "signal-present." This increases hits but also increases false alarms.
+    -   **If** $c > 0$: The observer has a *conservative bias*, meaning they are more likely to say "signal-absent." This reduces false alarms but also reduces hits.
+    -   **If** $c = 0$: The observer is *unbiased*, adopting a balanced decision criterion between signal and noise distributions.
+-   $c$ is calculated as the negative average of the z-scores of hits and false alarms:
+
+$$
+c = -\frac{(z_{\text{Hits}} + z_{\text{False Alarms}})}{2}
+$$
+
+------------------------------------------------------------------------
+
+**SUMMARY**
+
+-   $d'$ reflects **sensitivity** and is independent of bias. A larger $d'$ means better performance in distinguishing signal from noise.
+-   $c$ reflects **bias** and determines the observer's tendency to favor one response (signal-present or signal-absent):
+    -   Negative $c$ indicates a *liberal bias*.
+    -   Positive $c$ indicates a *conservative bias*.
+    -   $c = 0$ represents *no bias*.
+
+### Calculate SDT parameters
+
+```{r}
+# Load necessary library
+library(stats) # For norminv equivalent qnorm()
+
+# Confusion Matrix Calculations
+hits <- sum(response[u == 1] == 1) / sum(u == 1)
+misses <- sum(response[u == 1] == 0) / sum(u == 1)
+false_alarms <- sum(response[u == 0] == 1) / sum(u == 0)
+correct_rejections <- sum(response[u == 0] == 0) / sum(u == 0)
+
+# Z-scores for Hits and False Alarms
+zHits <- qnorm(hits)
+zFalseAlarms <- qnorm(false_alarms)
+
+# d' Calculation
+dPrime <- zHits - zFalseAlarms
+print(paste("d':", dPrime))
+# Bias (c) Calculation
+c <- -(zHits + zFalseAlarms) / 2
+print(paste("Bias (c):", c))
+
+```
+
+#### Repeat simulations using different criterion
+
+(hint: D' will be almost the same)
+
+```{r}
+# Repeat Simulation with Updated Beta
+beta <- 1 # New criterion
+response <- signal > beta
+
+# Recalculate Metrics
+hits <- sum(response[u == 1] == 1) / sum(u == 1)
+zHits <- qnorm(hits)
+false_alarms <- sum(response[u == 0] == 1) / sum(u == 0)
+zFalseAlarms <- qnorm(false_alarms)
+
+# Update d' and Bias (c)
+dPrime <- zHits - zFalseAlarms
+c <- -(zHits + zFalseAlarms) / 2
+print(paste("Updated d':", dPrime))
+print(paste("Updated Bias (c):", c))
+
+# Try beta <- 5. What happens?
+```
+
+### **Adjusting Hit and False Alarm Rates**
+
+When you set a very high value for the criterion $\beta$ (e.g., $\beta = 5$), you may encounter an issue where the **hit rate** or **false alarm rate** equals either 0 or 1, leading to undefined z-scores (i.e., `Inf` when using the `qnorm` function). This occurs because the normal quantile function (`qnorm`) cannot handle extreme values like 0 or 1.
+
+To address this issue and avoid the "Inf" result, you can apply a **continuity correction** to adjust the hit and false alarm rates, ensuring they remain within a valid range for the `qnorm` function. The adjusted hit and false alarm rates are calculated using the following formulas:
+
+------------------------------------------------------------------------
+
+**Formula for Adjusting Hit and False Alarm Rates:**
+
+1.  **Adjusted Hit Rate**: $$
+    HR_{\text{adjusted}} = \frac{\text{hits} + 0.5}{\text{signal-present trials} + 1}
+    $$
+
+2.  **Adjusted False Alarm Rate**: $$
+    FAR_{\text{adjusted}} = \frac{\text{false alarms} + 0.5}{\text{signal-absent trials} + 1}
+    $$
+
+This correction ensures that even if the **hit rate** or **false alarm rate** is exactly 0 or 1, the adjusted rates are within the open interval $(0, 1)$, making it possible to compute valid z-scores.
+
+------------------------------------------------------------------------
+
+**Calculating** $d'$ **with Adjusted Rates:**
+
+After applying the continuity correction, you can calculate the **z-scores** for hits and false alarms using the adjusted rates:
+
+-   **z-score for Hits**: $$
+    z_{\text{Hits}} = \text{qnorm}(HR_{\text{adjusted}})
+    $$
+
+-   **z-score for False Alarms**: $$
+    z_{\text{False Alarms}} = \text{qnorm}(FAR_{\text{adjusted}})
+    $$
+
+Finally, calculate $d'$ as the difference between the two z-scores:
+
+$$
+d' = z_{\text{Hits}} - z_{\text{False Alarms}}
+$$
+
+This adjustment allows you to compute $d'$ correctly even in extreme cases where the rates are 0 or 1.
+
+```{r}
+beta <- 1 # New criterion
+response <- signal > beta
+
+hits = response[u == 1] == 1
+FA = response[u == 0] == 1
+# Recalculate Metrics
+HR_adjusted <- (sum(hits) + .5) / (sum(u == 1)+1)
+zHits <- qnorm(HR_adjusted)
+FA_adjusted <- (sum(FA) + .5) / (sum(u == 0)+1)
+zFalseAlarms <- qnorm(FA_adjusted)
+
+# Update d' and Bias (c)
+dPrime <- zHits - zFalseAlarms
+c <- -(zHits + zFalseAlarms) / 2
+print(paste("Updated d':", dPrime))
+print(paste("Updated Bias (c):", c))
+```
+
+## **Receiver Operating Characteristic (ROC) Curves Analysis**
+
+In this section, we simulate Receiver Operating Characteristic (ROC) curves for different signal strengths (d') and criteria (beta values) to evaluate the performance of a signal detection model. The ROC curve plots the relationship between **false alarms** (x-axis) and **hits** (y-axis) for various threshold values.
+
+1.  **Empirical ROC Curve**:\
+    The empirical ROC curve is generated by calculating the hit rate (proportion of signal-present trials correctly identified) and the false alarm rate (proportion of signal-absent trials mistakenly identified as signal-present) for each combination of d' and beta values. The curve represents the performance of the model without any smoothing or fitting applied. The area under the curve (AUC) is also calculated for each d' value to assess the model's overall discrimination ability.
+
+2.  **Model-based ROC Curve**:\
+    The fitted ROC curve is generated by using a **normal cumulative distribution function (CDF)** to estimate the hit and false alarm rates. This method "smooths" the empirical data by fitting a theoretical model (based on the normal distribution) to the observed hit and false alarm rates. The smoothed ROC curve provides a cleaner, model-based representation of signal detection performance, especially when empirical data is sparse or noisy.
+
+3.  **Area Under the Curve (AUC)**:\
+    For each ROC curve (empirical or smoothed), the **AUC** is calculated using numerical integration (the trapezoidal rule). AUC is a common metric used to quantify the discrimination ability of the signal detection model, where a higher AUC indicates better performance.
+
+**Empirical ROC Curve**
+
+```{r}
+library(pracma)
+# Parameters
+ntrials <- 1000    # Number of trials
+sigma <- 1         # Standard deviation for noise and signal
+dPrimes <- seq(0, 4, by = 1)   # Range of d' values
+betas <- seq(10, -10, by = -0.1)  # Range of beta values
+
+# Initialize matrices to store hits, false alarms, and AUC
+hits <- matrix(NA, nrow = length(dPrimes), ncol = length(betas))
+false_alarms <- matrix(NA, nrow = length(dPrimes), ncol = length(betas))
+AUC <- numeric(length(dPrimes))
+
+# Simulate and calculate ROC curves
+noise <- rnorm(ntrials, mean = 0, sd = sigma)  # Simulated noise
+plot(0, 0, type = "n", xlim = c(0, 1), ylim = c(0, 1), 
+     xlab = "False alarms", ylab = "Hits", main = "Simulated ROC Curve")
+
+for (dx in 1:length(dPrimes)) {
+  signal <- rnorm(ntrials, mean = dPrimes[dx], sd = sigma)  # Simulated signal
+  for (bx in 1:length(betas)) {
+    hits[dx, bx] <- sum(signal > betas[bx]) / ntrials  # Proportion of hits
+    false_alarms[dx, bx] <- sum(noise > betas[bx]) / ntrials  # Proportion of false alarms
+  }
+  lines(false_alarms[dx, ], hits[dx, ], col = "blue")  # Plot ROC curve
+  AUC[dx] <- trapz(false_alarms[dx, ], hits[dx, ])  # Calculate AUC using trapezoidal rule
+}
+
+# Print AUC values for each d'
+print(AUC)
+
+
+```
+
+**Model-Based ROC Curve**
+
+```{r}
+# Fitted ROC curve (using normal CDF)
+smoothed_hits <- matrix(NA, nrow = length(dPrimes), ncol = length(betas))
+smoothed_false_alarms <- matrix(NA, nrow = length(dPrimes), ncol = length(betas))
+
+plot(0, 0, type = "n", xlim = c(0, 1), ylim = c(0, 1), 
+     xlab = "False alarms", ylab = "Hits", main = "Model-BAsed ROC Curve")
+
+for (dx in 1:length(dPrimes)) {
+  for (bx in 1:length(betas)) {
+    smoothed_hits[dx, bx] <- pnorm(dPrimes[dx] - betas[bx])  # Smoothed hit rate
+    smoothed_false_alarms[dx, bx] <- pnorm(-betas[bx])  # Smoothed false alarm rate
+  }
+  lines(smoothed_false_alarms[dx, ], smoothed_hits[dx, ], col = "red")  # Plot smoothed ROC curve
+  AUC[dx] <- trapz(smoothed_false_alarms[dx, ], smoothed_hits[dx, ])  # Smoothed AUC
+}
+# Print smoothed AUC values for each d'
+print(AUC)
+
+```
+
+### **Simulating the ROC Curve with a Single d' and Bias (Beta) Value**
+
+In a typical experimental setting, a participant's signal detection performance is summarized by a single **d'** (sensitivity) value per condition and a single **bias (beta)**.
+
+To simulate an ROC curve in such a case (when only a single d' and beta are available), we compute the **hit rate** (proportion of signal-present trials correctly identified) and the **false alarm rate** (proportion of signal-absent trials incorrectly identified as signal-present) for different values of the bias (beta).
+
+```{r}
+
+# Simulate the ROC curve for a given d' 
+dPrime = 1;  # Example d' value representing sensitivity
+betas <- seq(10, -10, by = -0.1)  # Range of beta values
+hits <- rep(NA, length(betas))  # Initialize hit rate vector with NA
+false_alarms <- rep(NA, length(betas))  #Initialize false alarm rate vector with NA
+
+# Loop over different beta values (decision thresholds)
+for (bx in 1:length(betas)) {
+    # Calculate hit rate using the cumulative normal distribution
+    hits[bx] <- pnorm(dPrime - betas[bx])  
+    # Calculate false alarm rate using the cumulative normal distribution for signal-absent trials
+    false_alarms[bx] <- pnorm(-betas[bx])  
+}
+
+# Calculate the Area Under the Curve (AUC) using numerical integration
+AUC <- trapz(false_alarms, hits)  
+```
