@@ -104,7 +104,7 @@ print(paste("L2 Bias (c):", cL2))
 
 # ROC Curve ---------------------------------------------------------------
 
-dPrime = dPrimeL2
+dPrime = dPrimeL1
 
 # Define a sequence of beta (decision threshold) values from 10 to -10
 betas <- seq(10, -10, by = -0.1)
